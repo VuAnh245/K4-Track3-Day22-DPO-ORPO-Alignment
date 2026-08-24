@@ -72,7 +72,7 @@ import gc
 def generate_with_adapter(adapter_path: Path, prompts: list[dict], max_new_tokens: int = 256):
     """Load base + adapter, generate for all prompts, free memory, return outputs."""
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=BASE_MODEL,
+        model_name=str(adapter_path),
         max_seq_length=MAX_LEN,
         dtype=None,
         load_in_4bit=True,
@@ -80,7 +80,13 @@ def generate_with_adapter(adapter_path: Path, prompts: list[dict], max_new_token
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    model = PeftModel.from_pretrained(model, str(adapter_path))
+    if getattr(tokenizer, "chat_template", None) is None:
+        try:
+            from unsloth.chat_templates import get_chat_template
+            tokenizer = get_chat_template(tokenizer, chat_template="qwen-2.5")
+        except Exception:
+            tokenizer.chat_template = "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\\n' + message['content'] + '<|im_end|>' + '\\n'}}{% endfor %}{% if add_generation_prompt %}{{'<|im_start|>assistant\\n'}}{% endif %}"
+
     FastLanguageModel.for_inference(model)
 
     outputs = []
