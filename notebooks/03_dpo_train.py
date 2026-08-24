@@ -70,20 +70,25 @@ assert torch.cuda.is_available(), "DPO needs a CUDA GPU. See HARDWARE-GUIDE.md."
 if torch.cuda.is_available():
     cap = torch.cuda.get_device_capability()
     if cap[0] < 8:
+        def _sdpa_mem_eff_attn(query, key, value, attn_bias=None, p=0.0, scale=None, op=None, output_dtype=None):
+            q = query.transpose(1, 2)
+            k = key.transpose(1, 2)
+            v = value.transpose(1, 2)
+            is_causal = attn_bias is not None and "LowerTriangular" in type(attn_bias).__name__
+            bias = None if is_causal or attn_bias is None else (attn_bias if isinstance(attn_bias, torch.Tensor) else None)
+            out = F.scaled_dot_product_attention(q, k, v, attn_mask=bias, dropout_p=p, is_causal=is_causal, scale=scale)
+            return out.transpose(1, 2)
         try:
             import xformers.ops as xops
-            def _sdpa_mem_eff_attn(query, key, value, attn_bias=None, p=0.0, scale=None, op=None, output_dtype=None):
-                q = query.transpose(1, 2)
-                k = key.transpose(1, 2)
-                v = value.transpose(1, 2)
-                is_causal = attn_bias is not None and "LowerTriangular" in type(attn_bias).__name__
-                bias = None if is_causal or attn_bias is None else (attn_bias if isinstance(attn_bias, torch.Tensor) else None)
-                out = F.scaled_dot_product_attention(q, k, v, attn_mask=bias, dropout_p=p, is_causal=is_causal, scale=scale)
-                return out.transpose(1, 2)
             xops.memory_efficient_attention = _sdpa_mem_eff_attn
-            print(f"✓ Patched xformers.ops.memory_efficient_attention with PyTorch SDPA for GPU capability {cap} (< 8.0)")
-        except Exception as e:
-            print("Notice: xformers patch not applied:", e)
+        except Exception:
+            pass
+        try:
+            import unsloth.utils.attention_dispatch as ud
+            ud.xformers_attention = _sdpa_mem_eff_attn
+        except Exception:
+            pass
+        print(f"✓ Patched xformers & unsloth attention with PyTorch SDPA for GPU capability {cap} (< 8.0)")
 
 # %% [markdown]
 # ## 1. Load policy + reference (the VRAM story)
