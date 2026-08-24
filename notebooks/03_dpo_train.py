@@ -167,6 +167,8 @@ dpo_config = DPOConfig(
     fp16=not torch.cuda.is_bf16_supported(),
     seed=42,
     loss_type="sigmoid",         # DPO standard (alternatives: ipo, hinge, kto)
+    gradient_checkpointing=True,
+    gradient_checkpointing_kwargs={"use_reentrant": False},
     report_to="none",
 )
 
