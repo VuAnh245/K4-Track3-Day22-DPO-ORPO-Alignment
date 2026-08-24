@@ -1,0 +1,9 @@
+{
+  "compute_tier": "T4",
+  "metrics": {
+    "IFEval": {
+      "sft": 0.612,
+      "dpo": 0.738
+    }
+  }
+}
