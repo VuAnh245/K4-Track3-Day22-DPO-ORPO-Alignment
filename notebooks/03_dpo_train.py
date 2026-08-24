@@ -27,8 +27,8 @@ COMPUTE_TIER = os.environ.get("COMPUTE_TIER", "T4").upper()
 
 if COMPUTE_TIER == "T4":
     BASE_MODEL = "unsloth/Qwen2.5-3B-bnb-4bit"
-    MAX_LEN = 512
-    MAX_PROMPT_LEN = 256
+    MAX_LEN = 384
+    MAX_PROMPT_LEN = 192
     PER_DEVICE_BATCH = 1
     GRAD_ACCUM = 8
 else:
@@ -92,20 +92,13 @@ if torch.cuda.is_available():
 
 # %% [markdown]
 # ## 1. Load policy + reference (the VRAM story)
-#
-# **Critical:** DPO scores each answer under the policy (trainable) AND a frozen
-# reference. With PEFT we do **not** load a second model -- TRL toggles the LoRA
-# adapter *off* to get the reference forward pass on the same 4-bit base. The
-# extra VRAM vs SFT comes from two forward passes + holding chosen AND rejected
-# sequences, not from a second copy of the weights.
 
 # %%
 from unsloth import FastLanguageModel
-from peft import PeftModel
 
-# Policy — gets new DPO LoRA adapter on top of SFT LoRA
+# Load base model directly from SFT adapter checkpoint for 4-bit memory efficiency
 model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name=BASE_MODEL,
+    model_name=str(SFT_PATH),
     max_seq_length=MAX_LEN,
     dtype=None,
     load_in_4bit=True,
@@ -113,13 +106,7 @@ model, tokenizer = FastLanguageModel.from_pretrained(
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-# Load SFT adapter on top of base
-model = PeftModel.from_pretrained(model, str(SFT_PATH), is_trainable=True)
-print(f"Policy: {model.__class__.__name__} with SFT adapter loaded")
-
-# %%
-# Wrap policy with NEW LoRA adapter for DPO updates (don't merge SFT — keep stacked)
-# Unsloth re-applies LoRA on top of the existing PeftModel.
+# Add trainable LoRA adapter for DPO
 model = FastLanguageModel.get_peft_model(
     model,
     r=16,
@@ -135,6 +122,7 @@ model = FastLanguageModel.get_peft_model(
     use_rslora=False,
     loftq_config=None,
 )
+FastLanguageModel.for_training(model)
 print(f"Trainable params (DPO LoRA): {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
 
 # %% [markdown]
