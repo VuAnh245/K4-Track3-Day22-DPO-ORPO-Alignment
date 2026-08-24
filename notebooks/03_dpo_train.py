@@ -66,6 +66,14 @@ import torch
 
 assert torch.cuda.is_available(), "DPO needs a CUDA GPU. See HARDWARE-GUIDE.md."
 
+if torch.cuda.is_available():
+    cap = torch.cuda.get_device_capability()
+    if cap[0] < 8:
+        torch.backends.cuda.enable_flash_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        torch.backends.cuda.enable_math_sdp(True)
+        print(f"Applied T4 SDPA fallback for GPU capability {cap} (< 8.0)")
+
 # %% [markdown]
 # ## 1. Load policy + reference (the VRAM story)
 #
